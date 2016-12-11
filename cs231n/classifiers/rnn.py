@@ -135,7 +135,19 @@ class CaptioningRNN(object):
     # defined above to store loss and gradients; grads[k] should give the      #
     # gradients for self.params[k].                                            #
     ############################################################################
-    pass
+    imf2hid = features.dot(W_proj) + b_proj
+    word_vectors, word_cache = word_embedding_forward(captions_in, W_embed)
+    if self.cell_type == 'rnn':
+        hidden, rnn_cache = rnn_forward(word_vectors, imf2hid, Wx, Wh, b)
+    scores, h2v_cache = temporal_affine_forward(hidden, W_vocab, b_vocab)
+    loss, dscores = temporal_softmax_loss(scores, captions_out, mask)
+    
+    dhidden, grads['W_vocab'], grads['b_vocab'] = temporal_affine_backward(dscores, h2v_cache)
+    if self.cell_type =='rnn':
+        dword_vectors, dimf2hid, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(dhidden, rnn_cache)
+    grads['W_embed'] = word_embedding_backward(dword_vectors, word_cache)
+    grads['W_proj'] = features.T.dot(dimf2hid)
+    grads['b_proj'] = np.sum(dimf2hid, axis = 0)
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
@@ -197,7 +209,20 @@ class CaptioningRNN(object):
     # functions; you'll need to call rnn_step_forward or lstm_step_forward in #
     # a loop.                                                                 #
     ###########################################################################
-    pass
+    V, W = W_embed.shape
+    h = features.dot(W_proj) + b_proj            
+    c = np.zeros(h.shape)
+    init_word = np.repeat(self._start, N)
+    captions[:, 0] = init_word
+    for i in xrange(1, max_length):    
+        onehots = np.eye(V)[captions[:, i-1]]    
+        word_vectors = onehots.dot(W_embed)      
+        if self.cell_type == 'rnn':        
+            h, cache = rnn_step_forward(word_vectors, h, Wx, Wh, b)    
+        else:        
+            h, c, cache = lstm_step_forward(word_vectors, h, c, Wx, Wh, b)
+        scores = h.dot(W_vocab) + b_vocab                                   
+        captions[:, i] = np.argmax(scores, axis=1)
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
